@@ -39,3 +39,8 @@ elseif(UNIX AND NOT APPLE)
 endif()
 
 add_executable(Git-Sync-d-CLI main.cpp ${SOURCES})
+
+add_custom_command(
+  TARGET Git-Sync-d-CLI POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/Debug/Git-Sync-d-CLI.exe ${CMAKE_SOURCE_DIR}/../Git-Sync-d/build/Debug/Git-Sync-d-CLI.exe
+)
