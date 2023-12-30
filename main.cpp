@@ -1,15 +1,34 @@
 #include <iostream>
 #include <string>
-#include <windows.h>
 #include <tchar.h>
 #include <stdio.h>
 #include <thread>
-#include <boost/interprocess/managed_shared_memory.hpp>
+#include <vector>
+#include <utility>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <thread>
 
-#define SERVICE_CONTROL_USER 128
-#define SERVICE_CONTROL_START_CLI (SERVICE_CONTROL_USER + 0)
+#ifdef _WIN32
+#include <WinSock2.h>
+#include <boost/asio.hpp>
+#include <windows.h>
+#include <Aclapi.h>
+#include <Sddl.h>
+#include <errors.h>
+#endif
 
-using namespace boost;
+#include <boost/asio.hpp>
+
+#define USE_BOOST_ASIO
+#if defined(BOOST_ASIO_HAS_WINDOWS_STREAM_HANDLE)
+# include <boost/asio/windows/stream_handle.hpp>
+#elif defined(BOOST_ASIO_HAS_LOCAL_STREAM_PROTOCOL)
+# include <boost/asio/local/stream_protocol.hpp>
+#endif
+
+using namespace boost::asio;
 
 bool IsAdmin()
 {
@@ -17,8 +36,8 @@ bool IsAdmin()
     PSID administratorsGroup;
     SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
     if (AllocateAndInitializeSid(&ntAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID,
-                                 DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0,
-                                 &administratorsGroup))
+        DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0,
+        &administratorsGroup))
     {
         CheckTokenMembership(NULL, administratorsGroup, &isAdmin);
         FreeSid(administratorsGroup);
@@ -26,7 +45,7 @@ bool IsAdmin()
     return isAdmin == TRUE;
 }
 
-void RestartAsAdmin(int argc, char *argv[])
+void RestartAsAdmin(int argc, char* argv[])
 {
     char path[MAX_PATH];
     GetModuleFileNameA(NULL, path, MAX_PATH);
@@ -55,23 +74,125 @@ void RestartAsAdmin(int argc, char *argv[])
     }
 }
 
-int main(int argc, char **argv)
+int main(int argc, char** argv)
 {
     std::cout << "GitSyncd - CLI" << std::endl;
+    // if (!IsAdmin())
+    // {
+    //     RestartAsAdmin(argc, argv);
+    //     return 0;
+    // }
+    // std::cout << "Running as admin" << std::endl;
 
-    if (!IsAdmin())
-    {
-        RestartAsAdmin(argc, argv);
-        return 0;
-    }
-    std::cout << "Running as admin" << std::endl;
-    LPCSTR serviceName = "GitSyncdService";
     // determine if argv[1] is "cli"
-    if (argc > 1 && (std::string(argv[1]) == "cli") || (std::string(argv[1]) == "--cli"))
+    if (argc == 1)
     {
-        // TODO:
-        
-        
+        try {
+            std::string pipeName = "\\\\.\\pipe\\git-sync-d";
+
+#ifdef BOOST_ASIO_HAS_WINDOWS_STREAM_HANDLE
+            std::cout << "setting up boost asio" << std::endl;
+            SECURITY_ATTRIBUTES sa;
+            SECURITY_DESCRIPTOR* pSD;
+            PSECURITY_DESCRIPTOR pSDDL;
+            // Define the SDDL for the security descriptor
+            // This SDDL string specifies that the pipe is open to Everyone
+            // D: DACL, A: Allow, GA: Generic All, S-1-1-0: SID string for "Everyone"
+            LPCSTR szSDDL = "D:(A;;GA;;;S-1-1-0)";
+            if (!ConvertStringSecurityDescriptorToSecurityDescriptor(
+                szSDDL, SDDL_REVISION_1, &pSDDL, NULL)) {
+                std::cout << "Failed to convert SDDL: " << GetLastError() << std::endl;
+            }
+            pSD = (SECURITY_DESCRIPTOR*) pSDDL;
+            sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+            sa.lpSecurityDescriptor = pSD;
+            sa.bInheritHandle = FALSE;
+            HANDLE pipe_handle = CreateFileA(
+                pipeName.c_str(), // name of the pipe
+                GENERIC_READ | GENERIC_WRITE, // two way communication
+                0,
+                &sa, // default security attributes
+                OPEN_EXISTING, // opens existing pipe
+                FILE_FLAG_OVERLAPPED, // default attributes
+                NULL // no template file
+            );
+            if (pipe_handle == INVALID_HANDLE_VALUE)
+            {
+                std::cout << "Failed to open pipe: " << GetLastError() << std::endl;
+                Sleep(10000);
+                return 1;
+            }
+            std::cout << "Opened pipe handle" << std::endl;
+            boost::system::error_code ec;
+            boost::asio::io_service io_service;
+            boost::asio::windows::stream_handle pipe(io_service, pipe_handle);
+            std::cout << "Created pipe" << std::endl;
+            io_service.run(ec);
+            if (ec)
+            {
+                std::cout << "Failed to run io_service: " << ec.message() << std::endl;
+                Sleep(10000);
+                return 1;
+            }
+
+            std::thread t([&]() {
+                std::cout << "Running io_service" << std::endl;
+                while (true)
+                {
+                    io_service.run(ec);
+                    if (ec)
+                    {
+                        std::cout << "Failed to run io_service: " << ec.message() << std::endl;
+                        Sleep(10000);
+                    }
+
+                }
+                });
+
+            std::vector<char> buf(1024);
+            std::cout << "Setting up pipe reader" << std::endl;
+            pipe.async_read_some(boost::asio::buffer(buf.data(), buf.size()), [&](const boost::system::error_code& error, std::size_t bytes_transferred)
+                {
+                    std::cout << "Read " << bytes_transferred << " bytes" << std::endl;
+                    std::cout << "Data: " << std::string(buf.begin(), buf.end()) << std::endl;
+                });
+
+            std::cout << "Writing to pipe" << std::endl;
+            pipe.async_write_some(boost::asio::buffer("Hello from client", 17), [&](const boost::system::error_code& error, std::size_t bytes_transferred)
+                {
+                    std::cout << "Wrote " << bytes_transferred << " bytes" << std::endl;
+                });
+            for (int i = 0; i < 120; i++)
+            {
+                pipe.write_some(boost::asio::buffer("Hello from client. non-async.", 17), ec);
+                if (ec)
+                {
+                    std::cout << "Failed to write to pipe: " << ec.message() << std::endl;
+                    Sleep(100);
+                } else {
+                    std::cout << "Wrote to pipe" << std::endl;
+                }
+                Sleep(1000);
+            }
+            std::cout << "Sleeping for 10 seconds" << std::endl;
+            Sleep(10000);
+#endif // BOOST_ASIO_HAS_WINDOWS_STREAM_HANDLE
+            pipe.close();
+            std::cout << "Closed pipe" << std::endl;
+        }
+        catch (std::exception& e)
+        {
+            std::cerr << "Exception: " << e.what() << std::endl;
+        }
+        catch (...)
+        {
+            std::cerr << "Unkown exception" << std::endl;
+        }
+        std::cout << "Sleeping for 2 seconds" << std::endl;
+        Sleep(20000);
+    } else if (argc == 2 && (strcmp(argv[1], "cli") == 0) || (strcmp(argv[1], "--cli") == 0))
+    {
+        // TODO: start CLI
         while (true)
         {
             std::cout << "GitSyncd CLI: ";
@@ -81,98 +202,10 @@ int main(int argc, char **argv)
             {
                 break;
             }
-            STARTUPINFO si;
-            PROCESS_INFORMATION pi;
-
-            ZeroMemory( &si, sizeof(si) );
-            si.cb = sizeof(si);
-            ZeroMemory( &pi, sizeof(pi) );
-
-            // Start the child process. 
-            if( !CreateProcess( NULL,   // No module name (use command line)
-                (LPSTR)someData.c_str(),        // Command line
-                NULL,           // Process handle not inheritable
-                NULL,           // Thread handle not inheritable
-                FALSE,          // Set handle inheritance to FALSE
-                0,              // No creation flags
-                NULL,           // Use parent's environment block
-                NULL,           // Use parent's starting directory 
-                &si,            // Pointer to STARTUPINFO structure
-                &pi )           // Pointer to PROCESS_INFORMATION structure
-            ) 
-            {
-                printf( "CreateProcess failed (%d).\n", GetLastError() );
-            }
-
-            // Wait until child process exits.
-            WaitForSingleObject( pi.hProcess, INFINITE );
-
-            // Close process and thread handles. 
-            CloseHandle( pi.hProcess );
-            CloseHandle( pi.hThread );
         }
     }
-    else
-    {
-        // send signal to service to start CLI as child process
-        std::cout << "Sending GitSyncd service command" << std::endl;
-        // sleep for a bit
-        std::cout << "a Line of text" << std::endl;
-
-        SC_HANDLE scmHandle = OpenSCManagerA(nullptr, nullptr, SC_MANAGER_ALL_ACCESS);
-        if (!scmHandle)
-        {
-            std::cout << "OpenSCManager failed" << std::endl;
-            return 1;
-        }
-        std::cout << "OpenSCManager success" << std::endl;
-        Sleep(1000);
-        SC_HANDLE serviceHandle;
-        try
-        {
-            serviceHandle = OpenServiceA(scmHandle, serviceName, SERVICE_ALL_ACCESS);
-        }
-        catch (std::error_code e)
-        {
-            std::cout << "OpenService failed. error: " << e << std::endl;
-            Sleep(10000);
-            return 1;
-        }
-        catch (...)
-        {
-            std::cout << "OpenService failed. error: unknown" << GetLastError() << std::endl;
-            Sleep(10000);
-            return 1;
-        }
-        if (!serviceHandle)
-        {
-            CloseServiceHandle(scmHandle);
-            std::cout << "OpenService failed" << std::endl;
-            return 1;
-        }
-        SERVICE_STATUS_PROCESS serviceStatus;
-        DWORD bytesNeeded;
-        if (!QueryServiceStatusEx(serviceHandle, SC_STATUS_PROCESS_INFO, (LPBYTE)&serviceStatus, sizeof(SERVICE_STATUS_PROCESS), &bytesNeeded))
-        {
-            CloseServiceHandle(serviceHandle);
-            CloseServiceHandle(scmHandle);
-            std::cout << "QueryServiceStatusEx failed" << std::endl;
-            return 1;
-        }
-        if (serviceStatus.dwCurrentState != SERVICE_RUNNING)
-        {
-            std::cout << "Service is not running" << std::endl;
-            CloseServiceHandle(serviceHandle);
-            CloseServiceHandle(scmHandle);
-            return 1;
-        }
-        ControlService(serviceHandle, SERVICE_CONTROL_START_CLI, (LPSERVICE_STATUS)&serviceStatus);
-        std::cout << "GitSyncd service command sent" << std::endl;
-        CloseServiceHandle(serviceHandle);
-        CloseServiceHandle(scmHandle);
-        std::cout << "Sleeping for 10 seconds" << std::endl;
-        Sleep(10000);
-    }
+    std::cout << "Exiting" << std::endl;
+    Sleep(2000);
     typedef std::pair<int, std::string> command;
     std::vector<command> commands;
     return 0;

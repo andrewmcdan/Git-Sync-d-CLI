@@ -12,6 +12,9 @@ find_package(Boost)
 if(Boost_FOUND)
   include_directories(${Boost_INCLUDE_DIRS})
   link_directories(${Boost_LIBRARY_DIRS})
+  if(WIN32)
+    add_definitions(-D_WIN32_WINNT=0x0601)
+  endif()
 endif()
 
 # Platform-specific settings
@@ -40,7 +43,7 @@ endif()
 
 add_executable(Git-Sync-d-CLI main.cpp ${SOURCES})
 
-add_custom_command(
-  TARGET Git-Sync-d-CLI POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/Debug/Git-Sync-d-CLI.exe ${CMAKE_SOURCE_DIR}/../Git-Sync-d/build/Debug/Git-Sync-d-CLI.exe
-)
+# add_custom_command(
+#   TARGET Git-Sync-d-CLI POST_BUILD
+#   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_PDB_OUTPUT_DIRECTORY}/Git-Sync-d-CLI.exe ${CMAKE_SOURCE_DIR}/../Git-Sync-d/build/Debug/Git-Sync-d-CLI.exe
+# )
