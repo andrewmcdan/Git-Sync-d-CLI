@@ -30,60 +30,9 @@
 
 using namespace boost::asio;
 
-bool IsAdmin()
-{
-    BOOL isAdmin = FALSE;
-    PSID administratorsGroup;
-    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
-    if (AllocateAndInitializeSid(&ntAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID,
-        DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0,
-        &administratorsGroup))
-    {
-        CheckTokenMembership(NULL, administratorsGroup, &isAdmin);
-        FreeSid(administratorsGroup);
-    }
-    return isAdmin == TRUE;
-}
-
-void RestartAsAdmin(int argc, char* argv[])
-{
-    char path[MAX_PATH];
-    GetModuleFileNameA(NULL, path, MAX_PATH);
-
-    SHELLEXECUTEINFOA shExInfo = {};
-    shExInfo.cbSize = sizeof(shExInfo);
-    shExInfo.fMask = SEE_MASK_DEFAULT;
-    shExInfo.hwnd = 0;
-    shExInfo.lpVerb = "runas"; // Run as admin
-    shExInfo.lpFile = path;    // Path to current executable
-    // fill lpParameters with the command line arguments
-    std::string params = "";
-    for (int i = 0; i < argc; i++)
-    {
-        params += argv[i];
-        params += " ";
-    }
-    shExInfo.lpParameters = params.c_str(); // Any parameters
-    shExInfo.lpDirectory = 0;
-    shExInfo.nShow = SW_NORMAL;
-
-    if (!ShellExecuteExA(&shExInfo))
-    {
-        DWORD error = GetLastError();
-        // Handle error TODO:
-    }
-}
-
 int main(int argc, char** argv)
 {
     std::cout << "GitSyncd - CLI" << std::endl;
-    // if (!IsAdmin())
-    // {
-    //     RestartAsAdmin(argc, argv);
-    //     return 0;
-    // }
-    // std::cout << "Running as admin" << std::endl;
-
     // determine if argv[1] is "cli"
     if (argc == 1)
     {
