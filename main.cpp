@@ -107,17 +107,18 @@ int main(int argc, char** argv)
                 });
 
             std::cout << "Writing to pipe" << std::endl;
-            pipe.async_write_some(boost::asio::buffer("Hello from client", 17), [&](const boost::system::error_code& error, std::size_t bytes_transferred)
-                {
-                    std::cout << "Wrote " << bytes_transferred << " bytes" << std::endl;
-                });
+            for(size_t i = 0; i < 500; i++){
+                pipe.async_write_some(boost::asio::buffer("Hello from client", 17), [&](const boost::system::error_code& error, std::size_t bytes_transferred)
+                    {
+                        std::cout << "Wrote " << bytes_transferred << " bytes" << std::endl;
+                    });
+            }
             for (int i = 0; i < 120; i++)
             {
-                pipe.write_some(boost::asio::buffer("Hello from client. non-async.", 17), ec);
+                pipe.write_some(boost::asio::buffer("Hello from client. non-async.", 30), ec);
                 if (ec)
                 {
                     std::cout << "Failed to write to pipe: " << ec.message() << std::endl;
-                    Sleep(100);
                 } else {
                     std::cout << "Wrote to pipe" << std::endl;
                 }
