@@ -80,6 +80,23 @@ int main(int argc, char** argv)
         boost::asio::windows::stream_handle pipe(io_service, pipe_handle);
         std::cout << "Created pipe" << std::endl;
         bool stop_io_service = false;
+        union {
+            char c[4];
+            int i;
+        } slot;
+        union {
+            char c[4];
+            int i;
+        } commandLength;
+        union {
+            char c[4];
+            int i;
+        } dataLength;
+        union {
+            char c[4];
+            int i;
+        } totalLength;
+        totalLength.i = 0;
         std::thread t([&]()
             {
                 // std::cout << "Running io_service" << std::endl;
@@ -95,18 +112,23 @@ int main(int argc, char** argv)
                 } });
 
         std::vector<char> buf(1024);
+        commandLength.i = 11;
+        dataLength.i = 19;
+        slot.i = 0;
+        totalLength.i = 0;
         std::cout << "Writing to pipe" << std::endl;
-        for (size_t i = 0; i < 10000; i++)
+        std::string stringToSend = "\x11\x22\x33\x44\x33\xA8\xBD\x4E" + std::string(totalLength.c,4) + std::string(commandLength.c,4) + std::string(dataLength.c,4) + std::string(slot.c,4) + "testCommand" + "testData: data data" + "\x88\x77\x66\x55\xF6\x9C\x29\xD9";
+        std::cout << "Sending: " << stringToSend << std::endl;
+        std::cout << "Sending: " << stringToSend.length() << " bytes" << std::endl;
+        for (size_t i = 0; i < 10; i++)
         {
-            pipe.async_write_some(boost::asio::buffer("Hello from client. ", 17), [&](const boost::system::error_code& error, std::size_t bytes_transferred)
-                {
-                    // std::cout << "Wrote " << bytes_transferred << " bytes" << std::endl; 
-                    if (ec) {
-                        std::cout << "Failed to write to pipe: " << ec.message() << std::endl;
-                    }
-                });
+            pipe.write_some(boost::asio::buffer(stringToSend.c_str(),stringToSend.length()),ec);
+            if (ec)
+            {
+                std::cout << "Failed to write to pipe: " << ec.message() << std::endl;
+            }
         }
-        for (int i = 0; i < 10000; i++)
+        for (int i = 0; i < 10; i++)
         {
             pipe.write_some(boost::asio::buffer("Hello from client. non-async. ", 29), ec);
             if (ec)
