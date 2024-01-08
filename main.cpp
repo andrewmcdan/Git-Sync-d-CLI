@@ -87,7 +87,7 @@ int main(int argc, char** argv)
         union {
             char c[4];
             int i;
-        } commandLength;
+        } command;
         union {
             char c[4];
             int i;
@@ -103,26 +103,30 @@ int main(int argc, char** argv)
                 while (!stop_io_service)
                 {
                     io_service.run(ec);
-                    if (ec)
-                    {
-                        std::cout << "Failed to run io_service: " << ec.message() << std::endl;
-                        Sleep(10);
-                    }
+                    if (ec) std::cout << "Failed to run io_service: " << ec.message() << std::endl;
+                    Sleep(10);
+                }
+            });
 
-                } });
+        std::string testCommand = "test";
+        std::string testData = "testData: data data";
+        std::string testCommandData = testCommand + testData;
+        std::cout << "testCommandData: " << testCommandData << std::endl;
+        std::cout << "testCommandData length: " << testCommandData.length() << std::endl;
+        std::cout << "testCommandData size: " << testCommandData.size() << std::endl;
 
-        std::vector<char> buf(1024);
-        commandLength.i = 11;
-        dataLength.i = 19;
+        dataLength.i = testData.length();
         slot.i = 0;
-        totalLength.i = 0;
+        totalLength.i = testCommandData.length() + 16;
+        command.i = 0;
+
         std::cout << "Writing to pipe" << std::endl;
-        std::string stringToSend = "\x11\x22\x33\x44\x33\xA8\xBD\x4E" + std::string(totalLength.c,4) + std::string(commandLength.c,4) + std::string(dataLength.c,4) + std::string(slot.c,4) + "testCommand" + "testData: data data" + "\x88\x77\x66\x55\xF6\x9C\x29\xD9";
+        std::string stringToSend = "\x11\x22\x33\x44\x33\xA8\xBD\x4E" + std::string(totalLength.c, 4) + std::string(dataLength.c, 4) + std::string(slot.c, 4) + std::string(command.c, 4) + testData + "\x88\x77\x66\x55\xF6\x9C\x29\xD9";
         std::cout << "Sending: " << stringToSend << std::endl;
         std::cout << "Sending: " << stringToSend.length() << " bytes" << std::endl;
         for (size_t i = 0; i < 10; i++)
         {
-            pipe.write_some(boost::asio::buffer(stringToSend.c_str(),stringToSend.length()),ec);
+            pipe.write_some(boost::asio::buffer(stringToSend.c_str(), stringToSend.length()), ec);
             if (ec)
             {
                 std::cout << "Failed to write to pipe: " << ec.message() << std::endl;
