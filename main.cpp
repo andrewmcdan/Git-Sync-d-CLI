@@ -82,19 +82,19 @@ int main(int argc, char** argv)
         bool stop_io_service = false;
         union {
             char c[4];
-            size_t i;
+            int i;
         } slot;
         union {
             char c[4];
-            size_t i;
+            int i;
         } command;
         union {
             char c[4];
-            size_t i;
+            int i;
         } dataLength;
         union {
             char c[4];
-            size_t i;
+            int i;
         } totalLength;
         totalLength.i = 0;
         std::thread t([&]()
@@ -110,9 +110,9 @@ int main(int argc, char** argv)
 
         std::string testData = "testData: data data";
 
-        dataLength.i = testData.length();
+        dataLength.i = (int) testData.length();
         slot.i = 0;
-        totalLength.i = testData.length() + 16;
+        totalLength.i = (int) testData.length() + 16;
         command.i = 0;
 
         std::cout << "Writing to pipe" << std::endl;
