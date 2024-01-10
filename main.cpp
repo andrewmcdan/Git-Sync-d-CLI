@@ -28,6 +28,9 @@
 #include <boost/asio/local/stream_protocol.hpp>
 #endif
 
+#define START_PATTERN_STRING "zL`93O5d"
+#define END_PATTERN_STRING "oY>U093Z"
+
 using namespace boost::asio;
 
 int main(int argc, char** argv)
@@ -107,8 +110,44 @@ int main(int argc, char** argv)
                     Sleep(10);
                 }
             });
+        std::vector<char> buffer_vect(1024 * 16);
+        std::thread reader([&]()
+            {
+                while (!stop_io_service)
+                {
+                    pipe.async_read_some(boost::asio::buffer(buffer_vect.data(), buffer_vect.size()), [&](const boost::system::error_code& ec, std::size_t bytes_transferred)
+                        {
+                            if (ec)
+                            {
+                                std::cout << "Failed to read from pipe: " << ec.message() << std::endl;
+                            } else if (bytes_transferred > 0)
+                            {
+                                std::cout << "Read " << bytes_transferred << " bytes from pipe" << std::endl;
+                                std::string s(buffer_vect.begin(), buffer_vect.begin() + bytes_transferred);
+                                std::cout << s << std::endl << std::endl;
 
-        std::string testData = "testData: data data";
+                                union {
+                                    char c[sizeof(size_t)];
+                                    size_t i;
+                                } responseSize;
+                                responseSize.i = 0;
+                                memcpy(responseSize.c, buffer_vect.data(), sizeof(size_t));
+                                std::cout << "Response size: " << responseSize.i << std::endl;
+                            }
+                        });
+                    Sleep(100);
+                }
+            });
+        std::string testData = "file:O:/Projects/MidJourneyAutomation/user.json\n";
+        testData += "destRepository:Git-Sync-d-TestData\n";
+        testData += "directory:test1\n";
+        union {
+            char c[4];
+            unsigned int i;
+        } syncType_un;
+        syncType_un.i = 2;
+        testData += "syncType:" + std::string(syncType_un.c, 4) + "\n";
+        testData += "syncTimeFrame:1h\n";
 
         dataLength.i = (int) testData.length();
         slot.i = 0;
@@ -116,10 +155,10 @@ int main(int argc, char** argv)
         command.i = 0;
 
         std::cout << "Writing to pipe" << std::endl;
-        std::string stringToSend = "\x11\x22\x33\x44\x33\xA8\xBD\x4E" + std::string(totalLength.c, 4) + std::string(dataLength.c, 4) + std::string(slot.c, 4) + std::string(command.c, 4) + testData + "\x88\x77\x66\x55\xF6\x9C\x29\xD9";
+        std::string stringToSend = START_PATTERN_STRING + std::string(totalLength.c, 4) + std::string(dataLength.c, 4) + std::string(slot.c, 4) + std::string(command.c, 4) + testData + END_PATTERN_STRING;
         std::cout << "Sending: " << stringToSend << std::endl;
         std::cout << "Sending: " << stringToSend.length() << " bytes" << std::endl;
-        for (size_t i = 0; i < 10; i++)
+        for (size_t i = 0; i < 1; i++)
         {
             pipe.write_some(boost::asio::buffer(stringToSend.c_str(), stringToSend.length()), ec);
             if (ec)
@@ -127,7 +166,7 @@ int main(int argc, char** argv)
                 std::cout << "Failed to write to pipe: " << ec.message() << std::endl;
             }
         }
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < 1; i++)
         {
             pipe.write_some(boost::asio::buffer("Hello from client. non-async. ", 29), ec);
             if (ec)
@@ -140,15 +179,19 @@ int main(int argc, char** argv)
         // Sleep(1000);
 #endif // BOOST_ASIO_HAS_WINDOWS_STREAM_HANDLE
         // std::cout << "Closed pipe" << std::endl;
+
+        std::cout << "Sleeping for 2 seconds" << std::endl;
+        Sleep(5000);
+
+
         pipe.close(ec);
         if (ec) {
             std::cout << "Failed to close pipe: " << ec.message() << std::endl;
         }
         CloseHandle(pipe.native_handle());
-
-        // std::cout << "Sleeping for 2 seconds" << std::endl;
         stop_io_service = true;
         t.join();
+        reader.join();
         // Sleep(20000);
     } else if (argc == 2 && (strcmp(argv[1], "cli") == 0) || (strcmp(argv[1], "--cli") == 0))
     {
