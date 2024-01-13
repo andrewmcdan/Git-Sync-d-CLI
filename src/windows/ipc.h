@@ -18,6 +18,10 @@
 #include <Aclapi.h>
 #include <Sddl.h>
 #include <errors.h>
+#include <filesystem>
+#include <tlhelp32.h>
+
+#include "../common/log.h"
 
 #define USE_BOOST_ASIO
 #include <boost/asio/windows/stream_handle.hpp>
@@ -33,9 +37,12 @@ public:
     IPC();
     ~IPC();
 private:
+    bool launchGitSyncd();
     std::thread io_service_thread;
     std::thread reader_thread;
     std::thread writer_thread;
+    bool IPC::IsProcessRunning(const char* processName);
 };
+
 
 #endif // !_IPC_H_

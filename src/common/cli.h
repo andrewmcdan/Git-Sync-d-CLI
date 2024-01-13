@@ -6,14 +6,12 @@
 #include "ftxui/screen/screen.hpp"
 #include "ftxui/screen/string.hpp"
 #include <iostream>
-
-
+#include <string>
 class CLI {
 public:
     CLI();
     ~CLI();
     void run();
-
 private:
 };
 

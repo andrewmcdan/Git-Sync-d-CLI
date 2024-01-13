@@ -3,10 +3,11 @@
 IPC::IPC()
 {
     std::string pipeName = "\\\\.\\pipe\\git-sync-d";
-
+    int tryOpenPipeCount = 0;
     HANDLE pipe_handle = INVALID_HANDLE_VALUE;
     do {
-        std::cout << "setting up boost asio" << std::endl;
+        tryOpenPipeCount++;
+        LOGGER::Log::addLog("setting up boost asio");
         SECURITY_ATTRIBUTES sa;
         SECURITY_DESCRIPTOR* pSD;
         PSECURITY_DESCRIPTOR pSDDL;
@@ -16,7 +17,7 @@ IPC::IPC()
         LPCSTR szSDDL = "D:(A;;GA;;;S-1-1-0)";
         if (!ConvertStringSecurityDescriptorToSecurityDescriptor(
                 szSDDL, SDDL_REVISION_1, &pSDDL, NULL)) {
-            std::cout << "Failed to convert SDDL: " << GetLastError() << std::endl;
+            LOGGER::Log::addLog("Failed to convert SDDL: " + std::to_string(GetLastError()));
         }
         pSD = (SECURITY_DESCRIPTOR*)pSDDL;
         sa.nLength = sizeof(SECURITY_ATTRIBUTES);
@@ -30,11 +31,19 @@ IPC::IPC()
             FILE_FLAG_OVERLAPPED, // default attributes
             NULL // no template file
         );
-        if (pipe_handle == INVALID_HANDLE_VALUE) {
-            std::cout << "Failed to open pipe: " << GetLastError() << std::endl;
+        if (pipe_handle == INVALID_HANDLE_VALUE ||true) {
+            LOGGER::Log::addLog("Failed to open pipe: " + std::to_string(GetLastError()));
+            LOGGER::Log::addLog("Attempting to launch git-sync-d");
+            if(!launchGitSyncd()){
+                LOGGER::Log::addLog("Failed to launch git-sync-d");
+            }
             Sleep(1000);
         }
-    } while (pipe_handle == INVALID_HANDLE_VALUE);
+    } while (pipe_handle == INVALID_HANDLE_VALUE && tryOpenPipeCount < 10);
+    if (pipe_handle == INVALID_HANDLE_VALUE) {
+        std::cout << "Unable to open pipe. Check the logs for more info." << std::endl;
+        return;
+    }
     std::cout << "Opened pipe handle" << std::endl;
     boost::system::error_code ec;
     boost::asio::io_service io_service;
@@ -109,33 +118,31 @@ IPC::IPC()
     totalLength.i = (int)testData.length() + 16;
     command.i = 0;
 
-    std::cout << "Writing to pipe" << std::endl;
+    LOGGER::Log::addLog("Writing to pipe");
     std::string stringToSend = START_PATTERN_STRING + std::string(totalLength.c, 4) + std::string(dataLength.c, 4) + std::string(slot.c, 4) + std::string(command.c, 4) + testData + END_PATTERN_STRING;
-    std::cout << "Sending: " << stringToSend << std::endl;
-    std::cout << "Sending: " << stringToSend.length() << " bytes" << std::endl;
+    LOGGER::Log::addLog("Sending: " + stringToSend);
+    LOGGER::Log::addLog("Sending: " + std::to_string(stringToSend.length()) + " bytes");
     for (size_t i = 0; i < 1; i++) {
         pipe.write_some(
             boost::asio::buffer(stringToSend.c_str(), stringToSend.length()), ec);
         if (ec) {
-            std::cout << "Failed to write to pipe: " << ec.message() << std::endl;
+            LOGGER::Log::addLog("Failed to write to pipe:\n\tec value: " + std::to_string(ec.value()) + "\n\tec message: " + ec.message());
         }
     }
     for (int i = 0; i < 1; i++) {
         pipe.write_some(boost::asio::buffer("Hello from client. non-async. ", 29),
             ec);
         if (ec) {
-            std::cout << "Failed to write to pipe: " << ec.message() << std::endl;
+            LOGGER::Log::addLog("Failed to write to pipe:\n\tec value: " + std::to_string(ec.value()) + "\n\tec message: " + ec.message());
         }
     }
-    std::cout << "Wrote to pipe" << std::endl;
-    std::cout << "Sleeping for 1 seconds" << std::endl;
-
-    std::cout << "Sleeping for 2 seconds" << std::endl;
+    LOGGER::Log::addLog("Wrote to pipe");
+    LOGGER::Log::addLog("Sleeping for 2 seconds");
     Sleep(5000);
 
     pipe.close(ec);
     if (ec) {
-        std::cout << "Failed to close pipe: " << ec.message() << std::endl;
+        LOGGER::Log::addLog("Failed to close pipe:\n\tec value: " + std::to_string(ec.value()) + "\n\tec message: " + ec.message());
     }
     CloseHandle(pipe.native_handle());
     stop_io_service = true;
@@ -144,3 +151,59 @@ IPC::IPC()
 }
 
 IPC::~IPC() { }
+
+bool IPC::launchGitSyncd(){
+    // get this executable's path
+    char path[MAX_PATH];
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    std::string gitSyncdPath = path;
+    gitSyncdPath = gitSyncdPath.substr(0, gitSyncdPath.find_last_of("\\/"));
+    gitSyncdPath += "\\Git-Sync-d.exe";
+    if(!std::filesystem::exists(gitSyncdPath)){
+        LOGGER::Log::addLog("git-sync-d.exe not found at: " + gitSyncdPath);
+        return false;
+    }
+    if(IsProcessRunning("Git-Sync-d.exe") || IsProcessRunning("git-sync-d.exe")){
+        LOGGER::Log::addLog("git-sync-d.exe is already running");
+        return false;
+    }
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    ZeroMemory(&pi, sizeof(pi));
+    std::string commandLine = gitSyncdPath + " -C";
+    if (!CreateProcessA(NULL, // No module name (use command line)
+            (LPSTR)commandLine.c_str(), // Command line
+            NULL, // Process handle not inheritable
+            NULL, // Thread handle not inheritable
+            FALSE, // Set handle inheritance to FALSE
+            DETACHED_PROCESS, // No creation flags
+            NULL, // Use parent's environment block
+            NULL, // Use parent's starting directory
+            &si, // Pointer to STARTUPINFO structure
+            &pi) // Pointer to PROCESS_INFORMATION structure
+    ) {
+        LOGGER::Log::addLog("Failed to launch git-sync-d: " + std::to_string(GetLastError()));
+        return false;
+    }
+    return true;
+}
+
+bool IPC::IsProcessRunning(const char* processName) {
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnapshot) {
+        PROCESSENTRY32 pe32;
+        pe32.dwSize = sizeof(PROCESSENTRY32);
+        if (Process32First(hSnapshot, &pe32)) {
+            do {
+                if (strcmp(pe32.szExeFile, processName) == 0) {
+                    CloseHandle(hSnapshot);
+                    return true;
+                }
+            } while (Process32Next(hSnapshot, &pe32));
+        }
+        CloseHandle(hSnapshot);
+    }
+    return false;
+}
