@@ -31,7 +31,7 @@ IPC::IPC()
             FILE_FLAG_OVERLAPPED, // default attributes
             NULL // no template file
         );
-        if (pipe_handle == INVALID_HANDLE_VALUE ||true) {
+        if (pipe_handle == INVALID_HANDLE_VALUE) {
             LOGGER::Log::addLog("Failed to open pipe: " + std::to_string(GetLastError()));
             LOGGER::Log::addLog("Attempting to launch git-sync-d");
             if(!launchGitSyncd()){
