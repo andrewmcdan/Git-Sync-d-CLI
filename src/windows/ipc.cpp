@@ -49,7 +49,7 @@ IPC::IPC()
     boost::asio::io_service io_service;
     boost::asio::windows::stream_handle pipe(io_service, pipe_handle);
     std::cout << "Created pipe" << std::endl;
-    bool stop_io_service = false;
+    this->stop_services = false;
     union {
         char c[4];
         int i;
@@ -67,9 +67,9 @@ IPC::IPC()
         int i;
     } totalLength;
     totalLength.i = 0;
-    std::thread t([&]() {
+    this->io_service_thread = std::thread([&]() {
         // std::cout << "Running io_service" << std::endl;
-        while (!stop_io_service) {
+        while (!this->stop_services) {
             io_service.run(ec);
             if (ec)
                 std::cout << "Failed to run io_service: " << ec.message() << std::endl;
@@ -77,8 +77,8 @@ IPC::IPC()
         }
     });
     std::vector<char> buffer_vector(1024 * 16);
-    std::thread reader([&]() {
-        while (!stop_io_service) {
+    this->reader_thread = std::thread([&]() {
+        while (!this->stop_services) {
             pipe.async_read_some(
                 boost::asio::buffer(buffer_vector.data(), buffer_vector.size()),
                 [&](const boost::system::error_code& ec,
@@ -145,12 +145,13 @@ IPC::IPC()
         LOGGER::Log::addLog("Failed to close pipe:\n\tec value: " + std::to_string(ec.value()) + "\n\tec message: " + ec.message());
     }
     CloseHandle(pipe.native_handle());
-    stop_io_service = true;
-    t.join();
-    reader.join();
 }
 
-IPC::~IPC() { }
+IPC::~IPC() {
+    this->stop_services = true;
+    this->io_service_thread.join();
+    this->reader_thread.join();
+}
 
 bool IPC::launchGitSyncd(){
     // get this executable's path
