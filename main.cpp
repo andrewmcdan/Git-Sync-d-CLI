@@ -12,14 +12,12 @@
 #include "src/unix/ipc.h"
 #endif
 
-#include "src/common/log.h"
 #include "src/common/cli.h"
+#include "src/common/log.h"
 #include "src/include/lyra/lyra.hpp"
 
 int main(int argc, char** argv)
 {
-    LOGGER::Log log(true);
-    LOGGER::Log::addLog("Git-Sync'd starting");
     struct CL_config {
         bool cli_enabled = false;
         bool show_help = false;
@@ -30,12 +28,14 @@ int main(int argc, char** argv)
         bool showRemoteRepos = false;
         bool addRemote = false;
         bool triggerSync_all = false;
+        bool printToStdout = false;
     } commandLine_config;
     std::function<bool(std::string const&)> fileExists = [](std::string const& s) {
         return std::filesystem::exists(s);
     };
     auto cli_parser = lyra::help(commandLine_config.show_help).description("Git-Sync'd - Command Line Interface")
         | lyra::opt(commandLine_config.cli_enabled)["-C"]["--cli"]("Starts the CLI")
+        | lyra::opt(commandLine_config.printToStdout)["-p"]["--print"]("Prints log entries to stdout")
         | lyra::opt(commandLine_config.showRemoteRepos)["-l"]["--list-remote"]("Lists all remote repos")
         | lyra::opt(commandLine_config.triggerSync_all)["-s"]["--sync"]("Syncs all repos");
 
@@ -57,14 +57,36 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    if (commandLine_config.cli_enabled) {
-        std::cout << "Git-Sync'd - Command Line Interface" << std::endl;
-        IPC ipc;
-        CLI cli;
-    }else{
-        std::cout << "Git-Sync'd" << std::endl;
+    if(commandLine_config.printToStdout && commandLine_config.cli_enabled){
+        std::cout << "Cannot use -p|--print with -C|--cli" << std::endl;
+        return 1;
     }
-    
-    LOGGER::Log::addLog("Git-Sync'd exiting");
+
+    LOGGER::Log log(commandLine_config.printToStdout);
+    LOGGER::Log::addLogEntry("Git-Sync'd starting");
+
+    {
+        INTERPROCESS::IPC ipc;
+
+        if (commandLine_config.cli_enabled) {
+            CLI cli = CLI();
+            std::cout << "Git-Sync'd - Command Line Interface is shutting down..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+        } else {
+            std::cout << "Git-Sync'd" << std::endl;
+            // here we do the things that the command line options specified
+        }
+        ipc.shutdown();
+        while(!ipc.getIsShutdown()){
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+
+    std::cout << "About to write log file" << std::endl;
+    if(!LOGGER::Log::writeLog()){
+        std::cout << "Failed to write log file" << std::endl;
+    }
+    std::cout << "Git-Sync'd is exiting..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     return 0;
 }
