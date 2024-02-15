@@ -151,13 +151,9 @@ IPC::IPC()
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         LOGGER::Log::addLogEntry("Stopping IPC services");
-        std::cout << "Stopping IPC services 1" << std::endl;
         this->reader_thread.join();
-        std::cout << "Stopping IPC services 2" << std::endl;
         this->writer_thread.join();
-        std::cout << "Stopping IPC services 3" << std::endl;
         this->io_service_thread.join();
-        std::cout << "Stopping IPC services 4" << std::endl;
         // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         pipe.close(ec);
         if (ec) {
@@ -170,12 +166,9 @@ IPC::IPC()
 
 IPC::~IPC()
 {
-    std::cout << "IPC destructor" << std::endl;
     IPC::stop_services = true;
-    std::cout << "IPC destructor 5" << std::endl;
     if(this->runner_thread.joinable())
         this->runner_thread.join();
-    std::cout << "IPC destructor 7" << std::endl;
 }
 
 void IPC::shutdown()

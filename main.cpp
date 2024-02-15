@@ -71,7 +71,7 @@ int main(int argc, char** argv)
         if (commandLine_config.cli_enabled) {
             CLI cli = CLI();
             std::cout << "Git-Sync'd - Command Line Interface is shutting down..." << std::endl;
-            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+            // std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         } else {
             std::cout << "Git-Sync'd" << std::endl;
             // here we do the things that the command line options specified
@@ -82,11 +82,11 @@ int main(int argc, char** argv)
         }
     }
 
-    std::cout << "About to write log file" << std::endl;
     if(!LOGGER::Log::writeLog()){
         std::cout << "Failed to write log file" << std::endl;
     }
     std::cout << "Git-Sync'd is exiting..." << std::endl;
-    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     return 0;
 }
