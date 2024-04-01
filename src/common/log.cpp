@@ -19,8 +19,7 @@ Log::Log()
     }
 }
 
-Log::Log(bool printToStdout)
-    : Log()
+Log::Log(bool printToStdout) : Log()
 {
     Log::printToStdout = printToStdout;
 }
